@@ -1,6 +1,8 @@
 import java.awt.*;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import javax.swing.*;
@@ -16,6 +18,7 @@ public class ExpenseTrackerGUI extends JFrame {
     private JComboBox<Category> categoryBox;
 
     private JButton addButton;
+    private JButton editButton;
     private JButton deleteButton;
     private JButton viewButton;
     private JButton summaryButton;
@@ -23,11 +26,11 @@ public class ExpenseTrackerGUI extends JFrame {
     private JTextArea outputArea;
 
     private static final Category[] DEFAULT_CATEGORIES = {
-        new Category("Food",           new Color(255, 200,  200)),
-        new Category("Rent",           new Color(180,  200, 240)),
-        new Category("Transportation", new Color(180,  230, 180)),
+        new Category("Food",           new Color(255, 200, 200)),
+        new Category("Rent",           new Color(180, 200, 240)),
+        new Category("Transportation", new Color(180, 230, 180)),
         new Category("Entertainment",  new Color(255, 230, 180)),
-        new Category("Shopping",       new Color(220, 190,  240)),
+        new Category("Shopping",       new Color(220, 190, 240)),
         new Category("Other",          new Color(210, 210, 210))
     };
 
@@ -138,17 +141,20 @@ public class ExpenseTrackerGUI extends JFrame {
         panel.setBackground(new Color(235, 240, 250));
         panel.setBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(200, 210, 230)));
 
-        addButton     = makeButton("Add",     new Color(60, 140, 80));
-        deleteButton  = makeButton("Delete",  new Color(200, 60, 60));
+        addButton     = makeButton("Add",      new Color(60, 140, 80));
+        editButton    = makeButton("Edit",     new Color(200, 130, 30));
+        deleteButton  = makeButton("Delete",   new Color(200, 60, 60));
         viewButton    = makeButton("View All", new Color(60, 100, 180));
-        summaryButton = makeButton("Summary", new Color(140, 80, 180));
+        summaryButton = makeButton("Summary",  new Color(140, 80, 180));
 
         addButton    .addActionListener(e -> addExpenseAction());
+        editButton   .addActionListener(e -> editExpenseAction());
         deleteButton .addActionListener(e -> deleteExpenseAction());
         viewButton   .addActionListener(e -> viewExpensesAction());
         summaryButton.addActionListener(e -> showSummary());
 
         panel.add(addButton);
+        panel.add(editButton);
         panel.add(deleteButton);
         panel.add(viewButton);
         panel.add(summaryButton);
@@ -157,10 +163,10 @@ public class ExpenseTrackerGUI extends JFrame {
 
     public void addExpenseAction() {
         try {
-            double      amount      = Double.parseDouble(amountField.getText().trim());
-            LocalDate   date        = LocalDate.parse(dateField.getText().trim());
-            String      description = descriptionField.getText().trim();
-            Category    category    = (Category) categoryBox.getSelectedItem();
+            double    amount      = Double.parseDouble(amountField.getText().trim());
+            LocalDate date        = LocalDate.parse(dateField.getText().trim());
+            String    description = descriptionField.getText().trim();
+            Category  category    = (Category) categoryBox.getSelectedItem();
 
             if (description.isEmpty()) {
                 JOptionPane.showMessageDialog(this, "Please enter a description.", "Input Error", JOptionPane.WARNING_MESSAGE);
@@ -181,6 +187,97 @@ public class ExpenseTrackerGUI extends JFrame {
         }
     }
 
+    public void editExpenseAction() {
+        List<Expense> all = manager.getAllExpenses();
+        if (all.isEmpty()) {
+            outputArea.setText("No expenses to edit.");
+            return;
+        }
+
+        // Show list first
+        StringBuilder sb = new StringBuilder("Current expenses:\n\n");
+        for (int i = 0; i < all.size(); i++) {
+            sb.append(i).append(". ").append(all.get(i)).append("\n");
+        }
+        outputArea.setText(sb.toString());
+
+        // Ask which one to edit
+        String input = JOptionPane.showInputDialog(this, "Enter number to edit (starting from 0):");
+        if (input == null) return;
+
+        int index;
+        try {
+            index = Integer.parseInt(input.trim());
+            if (index < 0 || index >= all.size()) throw new IndexOutOfBoundsException();
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(this, "Please enter a number.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        } catch (IndexOutOfBoundsException ex) {
+            JOptionPane.showMessageDialog(this, "Please enter a valid number.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Load existing values into input fields
+        Expense existing = all.get(index);
+        amountField.setText(String.valueOf(existing.getAmount()));
+        dateField.setText(existing.getDate().toString());
+        descriptionField.setText(existing.getDescription());
+
+        for (int i = 0; i < DEFAULT_CATEGORIES.length; i++) {
+            if (DEFAULT_CATEGORIES[i].getName().equals(existing.getCategory().getName())) {
+                categoryBox.setSelectedIndex(i);
+                break;
+            }
+        }
+
+        outputArea.setText("Editing expense #" + index + ":\n" + existing
+            + "\n\nUpdate the fields on the left and click 'Save Edit'.");
+
+        // Swap Add button to Save Edit
+        addButton.setText("Save Edit");
+        for (var listener : addButton.getActionListeners()) {
+            addButton.removeActionListener(listener);
+        }
+        final int editIndex = index;
+        addButton.addActionListener(e -> saveEditAction(editIndex));
+    }
+
+    private void saveEditAction(int index) {
+        try {
+            double    amount      = Double.parseDouble(amountField.getText().trim());
+            LocalDate date        = LocalDate.parse(dateField.getText().trim());
+            String    description = descriptionField.getText().trim();
+            Category  category    = (Category) categoryBox.getSelectedItem();
+
+            if (description.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Please enter a description.", "Input Error", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            Expense updated = new Expense(amount, date, description, category);
+            manager.updateExpense(index, updated);
+            outputArea.setText("Expense updated:\n" + updated);
+            clearInputs();
+
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(this, "Please enter a valid number for amount.", "Input Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        } catch (DateTimeParseException ex) {
+            JOptionPane.showMessageDialog(this, "Please enter date in YYYY-MM-DD format.", "Input Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        } catch (IllegalArgumentException ex) {
+            JOptionPane.showMessageDialog(this, ex.getMessage(), "Input Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Restore Add button
+        addButton.setText("Add");
+        for (var listener : addButton.getActionListeners()) {
+            addButton.removeActionListener(listener);
+        }
+        addButton.addActionListener(e -> addExpenseAction());
+    }
+
     public void deleteExpenseAction() {
         List<Expense> all = manager.getAllExpenses();
         if (all.isEmpty()) {
@@ -192,7 +289,6 @@ public class ExpenseTrackerGUI extends JFrame {
         for (int i = 0; i < all.size(); i++) {
             sb.append(i).append(". ").append(all.get(i)).append("\n");
         }
-        sb.append("\nEnter the number to delete (starting from 0):");
         outputArea.setText(sb.toString());
 
         String input = JOptionPane.showInputDialog(this, "Enter number to delete (starting from 0):");
@@ -210,55 +306,120 @@ public class ExpenseTrackerGUI extends JFrame {
     }
 
     public void viewExpensesAction() {
-        List<Expense> all = manager.getAllExpenses();
-        if (all.isEmpty()) {
-            outputArea.setText("No expenses recorded.");
+        String[] options = {"View All", "Filter by Category", "Filter by Date"};
+        int choice = JOptionPane.showOptionDialog(
+            this,
+            "How would you like to view expenses?",
+            "View Options",
+            JOptionPane.DEFAULT_OPTION,
+            JOptionPane.QUESTION_MESSAGE,
+            null, options, options[0]
+        );
+        if (choice == JOptionPane.CLOSED_OPTION) return;
+    
+        List<Expense> list;
+    
+        if (choice == 1) {
+            // Filter by Category
+            Category selected = (Category) JOptionPane.showInputDialog(
+                this, "Select category:", "Filter by Category",
+                JOptionPane.QUESTION_MESSAGE, null,
+                DEFAULT_CATEGORIES, DEFAULT_CATEGORIES[0]
+            );
+            if (selected == null) return;
+            list = manager.filterByCategory(selected);
+        } else if (choice == 2) {
+            // Filter by Date
+            String input = JOptionPane.showInputDialog(this, "Enter date (YYYY-MM-DD):");
+            if (input == null) return;
+            try {
+                LocalDate date = LocalDate.parse(input.trim());
+                list = manager.filterByDate(date);
+            } catch (DateTimeParseException ex) {
+                JOptionPane.showMessageDialog(this, "Please enter date in YYYY-MM-DD format.", "Error", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+        } else {
+            list = manager.getAllExpenses();
+        }
+    
+        if (list.isEmpty()) {
+            outputArea.setText("No expenses found.");
             return;
         }
-
+    
         StringBuilder sb = new StringBuilder();
         sb.append(String.format("%-5s %-12s %-12s %-20s %s%n",
                   "No.", "Date", "Amount", "Category", "Description"));
-        sb.append("─".repeat(65)).append("\n");
-
-        for (int i = 0; i < all.size(); i++) {
-            Expense e = all.get(i);
+        sb.append("-".repeat(65)).append("\n");
+        for (int i = 0; i < list.size(); i++) {
+            Expense e = list.get(i);
             sb.append(String.format("%-5d %-12s $%-11.2f %-20s %s%n",
-                i,
-                e.getDate(),
-                e.getAmount(),
-                e.getCategory().getName(),
-                e.getDescription()
-            ));
+                i, e.getDate(), e.getAmount(),
+                e.getCategory().getName(), e.getDescription()));
         }
-
-        sb.append("─".repeat(65)).append("\n");
-        sb.append(String.format("Total Spent: $%.2f%n", manager.getTotalSpent()));
+        sb.append("-".repeat(65)).append("\n");
+        double total = list.stream().mapToDouble(Expense::getAmount).sum();
+        sb.append(String.format("Total: $%.2f%n", total));
         outputArea.setText(sb.toString());
     }
 
     public void showSummary() {
-        LocalDate now   = LocalDate.now();
+        String[] options = {"Sort by Category", "Sort by Date"};
+        int choice = JOptionPane.showOptionDialog(
+            this,
+            "How would you like to sort the summary?",
+            "Summary Options",
+            JOptionPane.DEFAULT_OPTION,
+            JOptionPane.QUESTION_MESSAGE,
+            null, options, options[0]
+        );
+        if (choice == JOptionPane.CLOSED_OPTION) return;
+
+        LocalDate now = LocalDate.now();
         int month = now.getMonthValue();
         int year  = now.getYear();
 
-        Map<Category, Double> summary = manager.getMonthlySummary(month, year);
-
         StringBuilder sb = new StringBuilder();
         sb.append(String.format("Monthly Summary: %d/%d%n", month, year));
-        sb.append("─".repeat(40)).append("\n");
+        sb.append("-".repeat(40)).append("\n");
 
-        if (summary.isEmpty()) {
-            sb.append("No expenses this month.\n");
-        } else {
-            double total = 0;
-            for (Map.Entry<Category, Double> entry : summary.entrySet()) {
-                sb.append(String.format("%-20s $%.2f%n",
-                    entry.getKey().getName(), entry.getValue()));
-                total += entry.getValue();
+        if (choice == 0) {
+            // Sort by Category
+            Map<Category, Double> summary = manager.getMonthlySummary(month, year);
+            if (summary.isEmpty()) {
+                sb.append("No expenses this month.\n");
+            } else {
+                double total = 0;
+                for (Map.Entry<Category, Double> entry : summary.entrySet()) {
+                    sb.append(String.format("%-20s $%.2f%n",
+                        entry.getKey().getName(), entry.getValue()));
+                    total += entry.getValue();
+                }
+                sb.append("-".repeat(40)).append("\n");
+                sb.append(String.format("%-20s $%.2f%n", "Total", total));
             }
-            sb.append("─".repeat(40)).append("\n");
-            sb.append(String.format("%-20s $%.2f%n", "Total", total));
+        } else {
+            // Sort by Date
+            List<Expense> monthExpenses = new ArrayList<>(manager.getAllExpenses());
+            monthExpenses.removeIf(e -> e.getDate().getMonthValue() != month || e.getDate().getYear() != year);
+            monthExpenses.sort(Comparator.comparing(Expense::getDate));
+
+            if (monthExpenses.isEmpty()) {
+                sb.append("No expenses this month.\n");
+            } else {
+                double total = 0;
+                for (Expense e : monthExpenses) {
+                    sb.append(String.format("%-12s %-20s $%.2f%n",
+                        e.getDate(),
+                        e.getCategory().getName(),
+                        e.getAmount()
+                    ));
+                    total += e.getAmount();
+                }
+                sb.append("-".repeat(40)).append("\n");
+                sb.append(String.format("%-20s $%.2f%n", "Total", total));
+            }
         }
 
         outputArea.setText(sb.toString());
